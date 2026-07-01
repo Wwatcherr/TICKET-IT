@@ -1,42 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request: { headers: request.headers } })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          response = NextResponse.next({ request: { headers: request.headers } })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options as Parameters<typeof response.cookies.set>[2])
-          )
-        },
-      },
-    }
-  )
-
-  const { data: { session } } = await supabase.auth.getSession()
   const pathname = request.nextUrl.pathname
 
+  // Check for Supabase auth cookie
+  const authCookie = request.cookies.get('sb-access-token') || 
+                     request.cookies.getAll().find(c => c.name.includes('auth-token'))
+
   // Protect admin routes (except login page)
-  if (pathname.startsWith('/admin') && pathname !== '/admin' && !session) {
+  if (pathname.startsWith('/admin') && pathname !== '/admin' && !authCookie) {
     return NextResponse.redirect(new URL('/admin', request.url))
   }
 
-  // Redirect logged-in users away from login page
-  if (pathname === '/admin' && session) {
-    return NextResponse.redirect(new URL('/admin/dashboard', request.url))
-  }
-
-  return response
+  return NextResponse.next()
 }
 
 export const config = {
