@@ -19,13 +19,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [userName, setUserName] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME || 'Mon Entreprise'
-
-  // Login page — render directly, no auth check needed
-  if (pathname === '/admin') {
-    return <>{children}</>
-  }
+  const isLoginPage = pathname === '/admin'
 
   useEffect(() => {
+    if (isLoginPage) {
+      setReady(true)
+      return
+    }
+
     const supabase = createClient()
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -34,7 +35,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return
       }
 
-      // Try to get name from admin_users, fallback to email
       try {
         const { data } = await supabase
           .from('admin_users')
@@ -48,13 +48,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       setReady(true)
     })
-  }, [])
-
-  const handleSignOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.replace('/admin')
-  }
+  }, [isLoginPage])
 
   if (!ready) {
     return (
@@ -65,6 +59,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
     )
+  }
+
+  if (isLoginPage) {
+    return <>{children}</>
+  }
+
+  const handleSignOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.replace('/admin')
   }
 
   const Sidebar = () => (
