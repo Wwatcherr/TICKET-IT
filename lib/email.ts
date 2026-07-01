@@ -138,7 +138,8 @@ export async function sendTicketConfirmation(ticket: Ticket) {
     <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;">
       Conservez votre numéro de ticket <strong style="color:#4f46e5;">${ticket.ticket_number}</strong> pour toute communication.
       Vous recevrez un e-mail à chaque mise à jour de votre demande.
-    </p>`,
+    </p>
+    ${ctaButton(`${appUrl}/ticket/${ticket.ticket_number}`, 'Suivre mon ticket en ligne')}`,
     `Votre ticket ${ticket.ticket_number} a bien été enregistré`
   )
 
