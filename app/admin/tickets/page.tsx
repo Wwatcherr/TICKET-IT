@@ -1,307 +1,256 @@
-'use client'
+import nodemailer from 'nodemailer'
+import { Ticket, TicketMessage } from '@/types'
+import { STATUS_CONFIG, PRIORITY_CONFIG, formatDateTime } from '@/lib/utils'
 
-import { useEffect, useState, useCallback, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import { STATUS_CONFIG, PRIORITY_CONFIG, CATEGORY_CONFIG, timeAgo, cn } from '@/lib/utils'
-import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from '@/types'
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+})
 
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'Tous les statuts' },
-  ...Object.entries(STATUS_CONFIG).map(([k, v]) => ({ value: k, label: v.label })),
-]
-const PRIORITY_OPTIONS = [
-  { value: 'all', label: 'Toutes priorités' },
-  ...Object.entries(PRIORITY_CONFIG).map(([k, v]) => ({ value: k, label: v.label })),
-]
-const CATEGORY_OPTIONS = [
-  { value: 'all', label: 'Toutes catégories' },
-  ...Object.entries(CATEGORY_CONFIG).map(([k, v]) => ({ value: k, label: v.label })),
-]
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME || 'Mon Entreprise'
+const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER
 
-function TicketsContent() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
-  const [tickets, setTickets] = useState<Ticket[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [exportLoading, setExportLoading] = useState(false)
-  const [page, setPage] = useState(1)
-
-  const [search, setSearch] = useState(searchParams.get('search') || '')
-  const [status, setStatus] = useState(searchParams.get('status') || 'all')
-  const [priority, setPriority] = useState(searchParams.get('priority') || 'all')
-  const [category, setCategory] = useState(searchParams.get('category') || 'all')
-  const [sortBy, setSortBy] = useState('created_at')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-
-  const perPage = 20
-
-  const fetchTickets = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        per_page: String(perPage),
-        sort_by: sortBy,
-        sort_order: sortOrder,
-      })
-      if (search) params.set('search', search)
-      if (status !== 'all') params.set('status', status)
-      if (priority !== 'all') params.set('priority', priority)
-      if (category !== 'all') params.set('category', category)
-
-      const res = await fetch(`/api/tickets?${params}`)
-      const data = await res.json()
-      setTickets(data.data || [])
-      setTotal(data.count || 0)
-    } finally {
-      setLoading(false)
-    }
-  }, [page, search, status, priority, category, sortBy, sortOrder])
-
-  useEffect(() => {
-    const timeout = setTimeout(fetchTickets, search ? 300 : 0)
-    return () => clearTimeout(timeout)
-  }, [fetchTickets])
-
-  const handleExport = async (format: 'csv' | 'xlsx') => {
-    setExportLoading(true)
-    try {
-      const params = new URLSearchParams({ format })
-      if (status !== 'all') params.set('status', status)
-      if (priority !== 'all') params.set('priority', priority)
-      const res = await fetch(`/api/admin/export?${params}`)
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `tickets-${new Date().toISOString().split('T')[0]}.${format}`
-      a.click()
-      URL.revokeObjectURL(url)
-    } finally {
-      setExportLoading(false)
-    }
-  }
-
-  const toggleSort = (field: string) => {
-    if (sortBy === field) setSortOrder(o => o === 'asc' ? 'desc' : 'asc')
-    else { setSortBy(field); setSortOrder('desc') }
-    setPage(1)
-  }
-
-  const SortIcon = ({ field }: { field: string }) => (
-    <span className={cn('ml-1 text-xs', sortBy === field ? 'text-brand-600' : 'text-gray-300')}>
-      {sortBy === field ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
-    </span>
-  )
-
-  const totalPages = Math.ceil(total / perPage)
-
-  return (
-    <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="page-title">Tickets</h1>
-          <p className="text-sm text-gray-500 mt-1">{total} ticket{total > 1 ? 's' : ''} au total</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <button className="btn-secondary btn-sm flex items-center gap-1.5 pr-1.5">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Exporter
-            </button>
-            {/* Simple dropdown via a group */}
-          </div>
-          <button onClick={() => handleExport('csv')} className="btn-secondary btn-sm" disabled={exportLoading}>CSV</button>
-          <button onClick={() => handleExport('xlsx')} className="btn-secondary btn-sm" disabled={exportLoading}>Excel</button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="card p-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          {/* Search */}
-          <div className="relative flex-1">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              className="form-input pl-9"
-              placeholder="Rechercher un ticket, demandeur, numéro..."
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-            />
-          </div>
-          <select className="form-select w-full sm:w-44" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}>
-            {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <select className="form-select w-full sm:w-40" value={priority} onChange={e => { setPriority(e.target.value); setPage(1) }}>
-            {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <select className="form-select w-full sm:w-40" value={category} onChange={e => { setCategory(e.target.value); setPage(1) }}>
-            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          {(search || status !== 'all' || priority !== 'all' || category !== 'all') && (
-            <button
-              className="btn-ghost btn-sm whitespace-nowrap"
-              onClick={() => { setSearch(''); setStatus('all'); setPriority('all'); setCategory('all'); setPage(1) }}
-            >
-              Effacer
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="card overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center">
-            <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <div className="text-sm text-gray-400">Chargement...</div>
-          </div>
-        ) : tickets.length === 0 ? (
-          <div className="empty-state">
-            <div className="text-4xl mb-4">🔍</div>
-            <div className="text-gray-500 font-medium mb-1">Aucun ticket trouvé</div>
-            <div className="text-sm text-gray-400">Modifiez vos filtres ou créez un nouveau ticket</div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className="cursor-pointer" onClick={() => toggleSort('ticket_number')}>
-                    N° Ticket <SortIcon field="ticket_number" />
-                  </th>
-                  <th>Titre</th>
-                  <th>Demandeur</th>
-                  <th className="cursor-pointer" onClick={() => toggleSort('priority')}>
-                    Priorité <SortIcon field="priority" />
-                  </th>
-                  <th className="cursor-pointer" onClick={() => toggleSort('status')}>
-                    Statut <SortIcon field="status" />
-                  </th>
-                  <th>Catégorie</th>
-                  <th className="cursor-pointer" onClick={() => toggleSort('created_at')}>
-                    Créé <SortIcon field="created_at" />
-                  </th>
-                  <th>Assigné à</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tickets.map(ticket => {
-                  const status = STATUS_CONFIG[ticket.status]
-                  const priority = PRIORITY_CONFIG[ticket.priority]
-                  const category = CATEGORY_CONFIG[ticket.category]
-                  return (
-                    <tr
-                      key={ticket.id}
-                      className="cursor-pointer hover:bg-brand-50/30 transition-colors"
-                      onClick={() => router.push(`/admin/tickets/${ticket.id}`)}
-                    >
-                      <td>
-                        <span className="font-mono text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded">
-                          {ticket.ticket_number}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="max-w-[220px] truncate font-medium text-gray-900">{ticket.title}</div>
-                        <div className="text-xs text-gray-400 truncate max-w-[220px]">{ticket.requester_site}</div>
-                      </td>
-                      <td>
-                        <div className="text-sm font-medium text-gray-700">{ticket.requester_name}</div>
-                        <div className="text-xs text-gray-400">{ticket.requester_service}</div>
-                      </td>
-                      <td>
-                        <span className={cn('badge', priority.color, priority.bg)}>
-                          {priority.icon} {priority.label}
-                        </span>
-                      </td>
-                      <td>
-                        <span className={cn('badge', status.color, status.bg, 'border')}>
-                          <span className={cn('w-1.5 h-1.5 rounded-full', status.dot)} />
-                          {status.label}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="text-sm text-gray-600">{category?.emoji} {category?.label}</span>
-                      </td>
-                      <td>
-                        <span className="text-xs text-gray-500">{timeAgo(ticket.created_at)}</span>
-                      </td>
-                      <td>
-                        {ticket.assigned_user ? (
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-6 h-6 bg-brand-100 rounded-full flex items-center justify-center">
-                              <span className="text-xs font-semibold text-brand-700">
-                                {(ticket.assigned_user as {full_name?: string})?.full_name?.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                            <span className="text-xs text-gray-600">{(ticket.assigned_user as {full_name?: string})?.full_name}</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-300">Non assigné</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
+function baseTemplate(content: string, preheader = '') {
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IT Helpdesk</title>
+</head>
+<body style="margin:0;padding:0;background:#f8f9fa;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;">${preheader}</div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#4f46e5,#6366f1);border-radius:12px 12px 0 0;padding:28px 36px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">
+                    🛠️ IT Helpdesk
+                  </div>
+                  <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">${companyName}</div>
+                </td>
+              </tr>
             </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-50">
-            <div className="text-xs text-gray-500">
-              {(page - 1) * perPage + 1}–{Math.min(page * perPage, total)} sur {total}
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                className="btn-ghost btn-sm px-2"
-                disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
-              >
-                ←
-              </button>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const p = i + Math.max(1, page - 2)
-                if (p > totalPages) return null
-                return (
-                  <button
-                    key={p}
-                    onClick={() => setPage(p)}
-                    className={cn('btn-sm px-3 rounded-lg text-xs font-medium', p === page ? 'bg-brand-600 text-white' : 'btn-ghost')}
-                  >
-                    {p}
-                  </button>
-                )
-              })}
-              <button
-                className="btn-ghost btn-sm px-2"
-                disabled={page === totalPages}
-                onClick={() => setPage(p => p + 1)}
-              >
-                →
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="background:#ffffff;padding:36px;border-radius:0 0 12px 12px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+            ${content}
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="padding:24px 0 0;text-align:center;color:#9ca3af;font-size:12px;">
+            <p style="margin:0 0 4px;">Ce message est envoyé automatiquement — merci de ne pas y répondre directement.</p>
+            <p style="margin:0;">© ${new Date().getFullYear()} ${companyName} · IT Helpdesk</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
 }
 
-export default function TicketsPage() {
-  return (
-    <Suspense fallback={<div className="p-8 text-center text-gray-400">Chargement...</div>}>
-      <TicketsContent />
-    </Suspense>
+function ticketBadge(ticket: Ticket) {
+  const priority = PRIORITY_CONFIG[ticket.priority]
+  const status = STATUS_CONFIG[ticket.status]
+  return `
+    <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;width:100%;">
+      <tr>
+        <td style="background:#f8f9ff;border:1px solid #e0e7ff;border-radius:10px;padding:20px;">
+          <div style="font-size:13px;color:#6366f1;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+            Ticket ${ticket.ticket_number}
+          </div>
+          <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:12px;">${ticket.title}</div>
+          <table cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:16px;">
+                <span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:#fef3c7;color:#d97706;">
+                  ${priority.icon} ${priority.label}
+                </span>
+              </td>
+              <td>
+                <span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:#ede9fe;color:#7c3aed;">
+                  ${status.label}
+                </span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>`
+}
+
+function ctaButton(url: string, label: string) {
+  return `
+    <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="background:linear-gradient(135deg,#4f46e5,#6366f1);border-radius:8px;">
+          <a href="${url}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.2px;">
+            ${label} →
+          </a>
+        </td>
+      </tr>
+    </table>`
+}
+
+// ── Email: confirmation ticket créé (côté demandeur) ──────────────────────────
+export async function sendTicketConfirmation(ticket: Ticket) {
+  if (!ticket.email_consent) return
+
+  const html = baseTemplate(
+    `
+    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">Demande reçue ✅</h2>
+    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
+      Bonjour <strong>${ticket.requester_name}</strong>, votre ticket a bien été enregistré.
+      Notre équipe informatique va traiter votre demande dans les meilleurs délais.
+    </p>
+    ${ticketBadge(ticket)}
+    <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:24px;">
+      <tr>
+        <td width="50%" style="padding:0 8px 16px 0;vertical-align:top;">
+          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Catégorie</div>
+          <div style="font-size:14px;color:#374151;font-weight:500;">${ticket.category}</div>
+        </td>
+        <td width="50%" style="padding:0 0 16px 8px;vertical-align:top;">
+          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Date de la demande</div>
+          <div style="font-size:14px;color:#374151;font-weight:500;">${formatDateTime(ticket.created_at)}</div>
+        </td>
+      </tr>
+    </table>
+    <div style="background:#f9fafb;border-radius:8px;padding:16px;margin-bottom:24px;">
+      <div style="font-size:12px;font-weight:600;color:#9ca3af;text-transform:uppercase;margin-bottom:8px;">Votre description</div>
+      <div style="font-size:14px;color:#374151;line-height:1.6;">${ticket.description}</div>
+    </div>
+    <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;">
+      Conservez votre numéro de ticket <strong style="color:#4f46e5;">${ticket.ticket_number}</strong> pour toute communication.
+      Vous recevrez un e-mail à chaque mise à jour de votre demande.
+    </p>
+    ${ctaButton(`${appUrl}/ticket/${ticket.ticket_number}`, 'Suivre mon ticket en ligne')}`,
+    `Votre ticket ${ticket.ticket_number} a bien été enregistré`
   )
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: ticket.requester_email,
+    subject: `[Ticket IT ${ticket.ticket_number}] Votre demande a bien été enregistrée`,
+    html,
+    replyTo: `helpdesk+${ticket.id}@${process.env.SMTP_USER?.split('@')[1] || 'entreprise.fr'}`,
+  })
+}
+
+// ── Email: notification admin nouveau ticket ──────────────────────────────────
+export async function sendNewTicketNotification(ticket: Ticket) {
+  const html = baseTemplate(
+    `
+    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">Nouveau ticket 🎫</h2>
+    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
+      Un nouveau ticket vient d'être créé et nécessite votre attention.
+    </p>
+    ${ticketBadge(ticket)}
+    <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:24px;">
+      <tr>
+        <td width="50%" style="padding:0 8px 16px 0;vertical-align:top;">
+          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;margin-bottom:4px;">Demandeur</div>
+          <div style="font-size:14px;color:#374151;font-weight:500;">${ticket.requester_name}</div>
+          <div style="font-size:13px;color:#6b7280;">${ticket.requester_email}</div>
+        </td>
+        <td width="50%" style="padding:0 0 16px 8px;vertical-align:top;">
+          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;margin-bottom:4px;">Service / Site</div>
+          <div style="font-size:14px;color:#374151;font-weight:500;">${ticket.requester_service}</div>
+          <div style="font-size:13px;color:#6b7280;">${ticket.requester_site}</div>
+        </td>
+      </tr>
+    </table>
+    ${ctaButton(`${appUrl}/admin/tickets/${ticket.id}`, 'Traiter ce ticket')}`,
+    `Nouveau ticket ${ticket.ticket_number} — ${ticket.priority.toUpperCase()}`
+  )
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: adminEmail,
+    subject: `[Ticket IT ${ticket.ticket_number}] Nouveau ticket — ${ticket.requester_name}`,
+    html,
+  })
+}
+
+// ── Email: réponse admin → utilisateur ───────────────────────────────────────
+export async function sendAdminReply(ticket: Ticket, message: TicketMessage) {
+  if (!ticket.email_consent) return
+
+  const html = baseTemplate(
+    `
+    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">Nouvelle réponse 💬</h2>
+    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
+      Bonjour <strong>${ticket.requester_name}</strong>, l'équipe informatique a répondu à votre ticket.
+    </p>
+    ${ticketBadge(ticket)}
+    <div style="border-left:3px solid #6366f1;padding:16px 20px;background:#f8f9ff;border-radius:0 8px 8px 0;margin-bottom:24px;">
+      <div style="font-size:12px;color:#6366f1;font-weight:600;margin-bottom:8px;">
+        ${message.author_name} · ${formatDateTime(message.created_at)}
+      </div>
+      <div style="font-size:15px;color:#374151;line-height:1.7;white-space:pre-wrap;">${message.content}</div>
+    </div>
+    <p style="margin:0 0 16px;color:#6b7280;font-size:14px;">
+      Vous pouvez répondre directement à cet e-mail, votre réponse sera automatiquement ajoutée à votre ticket.
+    </p>`,
+    `Réponse à votre ticket ${ticket.ticket_number}`
+  )
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: ticket.requester_email,
+    subject: `[Ticket IT ${ticket.ticket_number}] Réponse de l'équipe IT`,
+    html,
+    replyTo: `helpdesk+${ticket.id}@${process.env.SMTP_USER?.split('@')[1] || 'entreprise.fr'}`,
+  })
+}
+
+// ── Email: changement de statut ───────────────────────────────────────────────
+export async function sendStatusChange(ticket: Ticket, oldStatus: string, newStatus: string) {
+  if (!ticket.email_consent) return
+
+  const statusLabel = STATUS_CONFIG[ticket.status as keyof typeof STATUS_CONFIG]?.label || newStatus
+  const isClosed = ticket.status === 'ferme' || ticket.status === 'resolu'
+
+  const html = baseTemplate(
+    `
+    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">
+      Statut mis à jour ${isClosed ? '✅' : '🔄'}
+    </h2>
+    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
+      Bonjour <strong>${ticket.requester_name}</strong>, le statut de votre ticket a été mis à jour.
+    </p>
+    ${ticketBadge(ticket)}
+    <div style="text-align:center;padding:24px;background:#f9fafb;border-radius:10px;margin-bottom:24px;">
+      <div style="font-size:13px;color:#9ca3af;margin-bottom:12px;">Nouveau statut</div>
+      <div style="font-size:20px;font-weight:700;color:#4f46e5;">${statusLabel}</div>
+    </div>
+    ${isClosed
+      ? `<p style="margin:0;color:#6b7280;font-size:14px;text-align:center;">Votre demande a été traitée. Si le problème persiste, n'hésitez pas à créer un nouveau ticket.</p>`
+      : `<p style="margin:0;color:#6b7280;font-size:14px;text-align:center;">Notre équipe continue de traiter votre demande. Vous serez notifié(e) à chaque étape.</p>`
+    }`,
+    `Ticket ${ticket.ticket_number} — ${statusLabel}`
+  )
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: ticket.requester_email,
+    subject: `[Ticket IT ${ticket.ticket_number}] Statut mis à jour : ${statusLabel}`,
+    html,
+    replyTo: `helpdesk+${ticket.id}@${process.env.SMTP_USER?.split('@')[1] || 'entreprise.fr'}`,
+  })
 }
