@@ -5,6 +5,7 @@ const PUBLIC_ROUTES = [
   '/inscription',
   '/reset-password',
   '/admin',
+  '/api',
 ]
 
 export async function middleware(request: NextRequest) {
@@ -14,7 +15,6 @@ export async function middleware(request: NextRequest) {
   if (
     PUBLIC_ROUTES.some(r => pathname.startsWith(r)) ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
     pathname.includes('.')
   ) {
     return NextResponse.next()
@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
 
   // Check for Supabase session cookie
   const hasSession = request.cookies.getAll().some(c =>
-    c.name.includes('auth-token') || c.name.includes('sb-') && c.name.includes('-auth')
+    c.name.includes('auth-token') || (c.name.includes('sb-') && c.name.includes('-auth'))
   )
 
   if (!hasSession) {
