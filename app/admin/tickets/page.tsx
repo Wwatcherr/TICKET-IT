@@ -1,256 +1,485 @@
-import nodemailer from 'nodemailer'
-import { Ticket, TicketMessage } from '@/types'
-import { STATUS_CONFIG, PRIORITY_CONFIG, formatDateTime } from '@/lib/utils'
+'use client'
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-})
+import { useEffect, useState, useRef } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import toast from 'react-hot-toast'
+import {
+  STATUS_CONFIG, PRIORITY_CONFIG, CATEGORY_CONFIG,
+  formatDateTime, timeAgo, cn
+} from '@/lib/utils'
+import type { Ticket, TicketMessage, TicketNote, TicketStatus, TicketPriority, AdminUser } from '@/types'
+import { createClient } from '@/lib/supabase/client'
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME || 'Mon Entreprise'
-const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER
-
-function baseTemplate(content: string, preheader = '') {
-  return `<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IT Helpdesk</title>
-</head>
-<body style="margin:0;padding:0;background:#f8f9fa;font-family:'Segoe UI',Arial,sans-serif;">
-  <div style="display:none;max-height:0;overflow:hidden;">${preheader}</div>
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;padding:32px 16px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
-        <!-- Header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#4f46e5,#6366f1);border-radius:12px 12px 0 0;padding:28px 36px;">
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td>
-                  <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">
-                    🛠️ IT Helpdesk
-                  </div>
-                  <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">${companyName}</div>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <!-- Body -->
-        <tr>
-          <td style="background:#ffffff;padding:36px;border-radius:0 0 12px 12px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
-            ${content}
-          </td>
-        </tr>
-        <!-- Footer -->
-        <tr>
-          <td style="padding:24px 0 0;text-align:center;color:#9ca3af;font-size:12px;">
-            <p style="margin:0 0 4px;">Ce message est envoyé automatiquement — merci de ne pas y répondre directement.</p>
-            <p style="margin:0;">© ${new Date().getFullYear()} ${companyName} · IT Helpdesk</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`
+type TicketActivity = {
+  id: string
+  action: string
+  old_value?: string
+  new_value?: string
+  performed_by: string
+  created_at: string
 }
 
-function ticketBadge(ticket: Ticket) {
-  const priority = PRIORITY_CONFIG[ticket.priority]
-  const status = STATUS_CONFIG[ticket.status]
-  return `
-    <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;width:100%;">
-      <tr>
-        <td style="background:#f8f9ff;border:1px solid #e0e7ff;border-radius:10px;padding:20px;">
-          <div style="font-size:13px;color:#6366f1;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
-            Ticket ${ticket.ticket_number}
-          </div>
-          <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:12px;">${ticket.title}</div>
-          <table cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="padding-right:16px;">
-                <span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:#fef3c7;color:#d97706;">
-                  ${priority.icon} ${priority.label}
-                </span>
-              </td>
-              <td>
-                <span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:#ede9fe;color:#7c3aed;">
-                  ${status.label}
-                </span>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>`
+type FullTicket = Ticket & {
+  messages: TicketMessage[]
+  notes: TicketNote[]
+  activities: TicketActivity[]
 }
 
-function ctaButton(url: string, label: string) {
-  return `
-    <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
-      <tr>
-        <td style="background:linear-gradient(135deg,#4f46e5,#6366f1);border-radius:8px;">
-          <a href="${url}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.2px;">
-            ${label} →
-          </a>
-        </td>
-      </tr>
-    </table>`
-}
+export default function TicketDetailPage() {
+  const { id } = useParams()
+  const router = useRouter()
+  const [ticket, setTicket] = useState<FullTicket | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [activeTab, setActiveTab] = useState<'conversation' | 'notes' | 'history'>('conversation')
+  const [reply, setReply] = useState('')
+  const [note, setNote] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
+  const [technicians, setTechnicians] = useState<AdminUser[]>([])
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-// ── Email: confirmation ticket créé (côté demandeur) ──────────────────────────
-export async function sendTicketConfirmation(ticket: Ticket) {
-  if (!ticket.email_consent) return
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return
+      const { data } = await supabase.from('admin_users').select('*').eq('id', session.user.id).single()
+      if (data) setAdminUser(data)
+    })
+    supabase.from('admin_users').select('*').then(({ data }) => setTechnicians(data || []))
+  }, [])
 
-  const html = baseTemplate(
-    `
-    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">Demande reçue ✅</h2>
-    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
-      Bonjour <strong>${ticket.requester_name}</strong>, votre ticket a bien été enregistré.
-      Notre équipe informatique va traiter votre demande dans les meilleurs délais.
-    </p>
-    ${ticketBadge(ticket)}
-    <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:24px;">
-      <tr>
-        <td width="50%" style="padding:0 8px 16px 0;vertical-align:top;">
-          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Catégorie</div>
-          <div style="font-size:14px;color:#374151;font-weight:500;">${ticket.category}</div>
-        </td>
-        <td width="50%" style="padding:0 0 16px 8px;vertical-align:top;">
-          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Date de la demande</div>
-          <div style="font-size:14px;color:#374151;font-weight:500;">${formatDateTime(ticket.created_at)}</div>
-        </td>
-      </tr>
-    </table>
-    <div style="background:#f9fafb;border-radius:8px;padding:16px;margin-bottom:24px;">
-      <div style="font-size:12px;font-weight:600;color:#9ca3af;text-transform:uppercase;margin-bottom:8px;">Votre description</div>
-      <div style="font-size:14px;color:#374151;line-height:1.6;">${ticket.description}</div>
-    </div>
-    <p style="margin:0;color:#6b7280;font-size:14px;line-height:1.6;">
-      Conservez votre numéro de ticket <strong style="color:#4f46e5;">${ticket.ticket_number}</strong> pour toute communication.
-      Vous recevrez un e-mail à chaque mise à jour de votre demande.
-    </p>
-    ${ctaButton(`${appUrl}/ticket/${ticket.ticket_number}`, 'Suivre mon ticket en ligne')}`,
-    `Votre ticket ${ticket.ticket_number} a bien été enregistré`
-  )
+  const loadTicket = async () => {
+    try {
+      const res = await fetch(`/api/tickets/${id}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setTicket(data)
+    } catch {
+      toast.error('Ticket introuvable')
+      router.push('/admin/tickets')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to: ticket.requester_email,
-    subject: `[Ticket IT ${ticket.ticket_number}] Votre demande a bien été enregistrée`,
-    html,
-    replyTo: `helpdesk+${ticket.id}@${process.env.SMTP_USER?.split('@')[1] || 'entreprise.fr'}`,
-  })
-}
+  useEffect(() => { loadTicket() }, [id])
 
-// ── Email: notification admin nouveau ticket ──────────────────────────────────
-export async function sendNewTicketNotification(ticket: Ticket) {
-  const html = baseTemplate(
-    `
-    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">Nouveau ticket 🎫</h2>
-    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
-      Un nouveau ticket vient d'être créé et nécessite votre attention.
-    </p>
-    ${ticketBadge(ticket)}
-    <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:24px;">
-      <tr>
-        <td width="50%" style="padding:0 8px 16px 0;vertical-align:top;">
-          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;margin-bottom:4px;">Demandeur</div>
-          <div style="font-size:14px;color:#374151;font-weight:500;">${ticket.requester_name}</div>
-          <div style="font-size:13px;color:#6b7280;">${ticket.requester_email}</div>
-        </td>
-        <td width="50%" style="padding:0 0 16px 8px;vertical-align:top;">
-          <div style="font-size:11px;font-weight:600;color:#9ca3af;text-transform:uppercase;margin-bottom:4px;">Service / Site</div>
-          <div style="font-size:14px;color:#374151;font-weight:500;">${ticket.requester_service}</div>
-          <div style="font-size:13px;color:#6b7280;">${ticket.requester_site}</div>
-        </td>
-      </tr>
-    </table>
-    ${ctaButton(`${appUrl}/admin/tickets/${ticket.id}`, 'Traiter ce ticket')}`,
-    `Nouveau ticket ${ticket.ticket_number} — ${ticket.priority.toUpperCase()}`
-  )
+  useEffect(() => {
+    if (activeTab === 'conversation') {
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    }
+  }, [ticket?.messages, activeTab])
 
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to: adminEmail,
-    subject: `[Ticket IT ${ticket.ticket_number}] Nouveau ticket — ${ticket.requester_name}`,
-    html,
-  })
-}
+  const updateTicket = async (updates: Partial<Ticket>) => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/tickets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...updates, performed_by: adminUser?.full_name || 'Admin' }),
+      })
+      if (!res.ok) throw new Error()
+      await loadTicket()
+      toast.success('Ticket mis à jour')
+    } catch {
+      toast.error('Erreur lors de la mise à jour')
+    } finally {
+      setSaving(false)
+    }
+  }
 
-// ── Email: réponse admin → utilisateur ───────────────────────────────────────
-export async function sendAdminReply(ticket: Ticket, message: TicketMessage) {
-  if (!ticket.email_consent) return
+  const deleteTicket = async () => {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/tickets/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      toast.success('Ticket supprimé')
+      router.push('/admin/tickets')
+    } catch {
+      toast.error('Erreur lors de la suppression')
+      setDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
 
-  const html = baseTemplate(
-    `
-    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">Nouvelle réponse 💬</h2>
-    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
-      Bonjour <strong>${ticket.requester_name}</strong>, l'équipe informatique a répondu à votre ticket.
-    </p>
-    ${ticketBadge(ticket)}
-    <div style="border-left:3px solid #6366f1;padding:16px 20px;background:#f8f9ff;border-radius:0 8px 8px 0;margin-bottom:24px;">
-      <div style="font-size:12px;color:#6366f1;font-weight:600;margin-bottom:8px;">
-        ${message.author_name} · ${formatDateTime(message.created_at)}
+  const sendMessage = async () => {
+    if (!reply.trim()) return
+    setSendingMessage(true)
+    try {
+      const res = await fetch(`/api/tickets/${id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: reply,
+          author_name: adminUser?.full_name || 'Admin IT',
+          author_email: adminUser?.email || '',
+          author_role: adminUser?.role || 'admin',
+        }),
+      })
+      if (!res.ok) throw new Error()
+      setReply('')
+      await loadTicket()
+      toast.success('Message envoyé')
+    } catch {
+      toast.error('Erreur envoi message')
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
+  const addNote = async () => {
+    if (!note.trim() || !adminUser) return
+    try {
+      const res = await fetch(`/api/tickets/${id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: note, author_id: adminUser.id }),
+      })
+      if (!res.ok) throw new Error()
+      setNote('')
+      await loadTicket()
+      toast.success('Note ajoutée')
+    } catch {
+      toast.error('Erreur ajout note')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
       </div>
-      <div style="font-size:15px;color:#374151;line-height:1.7;white-space:pre-wrap;">${message.content}</div>
+    )
+  }
+
+  if (!ticket) return null
+
+  const status = STATUS_CONFIG[ticket.status]
+  const priority = PRIORITY_CONFIG[ticket.priority]
+  const category = CATEGORY_CONFIG[ticket.category]
+
+  return (
+    <div className="h-full flex flex-col lg:flex-row overflow-hidden animate-fade-in">
+      {/* Confirm delete modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative bg-white rounded-2xl shadow-elevated w-full max-w-sm p-6 animate-slide-up">
+            <div className="text-center mb-5">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Supprimer ce ticket ?</h3>
+              <p className="text-sm text-gray-500">
+                Le ticket <strong>{ticket.ticket_number}</strong> et toutes ses données seront définitivement supprimés. Cette action est irréversible.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button className="btn-secondary flex-1" onClick={() => setShowDeleteConfirm(false)}>
+                Annuler
+              </button>
+              <button className="btn-danger flex-1" onClick={deleteTicket} disabled={deleting}>
+                {deleting ? 'Suppression...' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main panel */}
+      <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="p-6 lg:p-8">
+          {/* Breadcrumb */}
+          <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
+            <Link href="/admin/tickets" className="hover:text-gray-700">Tickets</Link>
+            <span>/</span>
+            <span className="text-gray-900 font-medium">{ticket.ticket_number}</span>
+          </div>
+
+          {/* Title & meta */}
+          <div className="mb-6">
+            <div className="flex items-start gap-3 mb-3">
+              <span className={cn('badge border mt-1', status.color, status.bg)}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', status.dot)} />
+                {status.label}
+              </span>
+              <span className={cn('badge mt-1', priority.color, priority.bg)}>
+                {priority.icon} {priority.label}
+              </span>
+            </div>
+            <h1 className="text-xl font-bold text-gray-900 mb-2">{ticket.title}</h1>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
+              <span>📋 {category?.emoji} {category?.label}</span>
+              <span>·</span>
+              <span>👤 {ticket.requester_name}</span>
+              <span>·</span>
+              <span>🕐 {timeAgo(ticket.created_at)}</span>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b border-gray-100 mb-6">
+            <div className="flex gap-6">
+              {[
+                { key: 'conversation', label: 'Conversation', count: ticket.messages?.length },
+                { key: 'notes', label: 'Notes internes', count: ticket.notes?.length },
+                { key: 'history', label: 'Historique', count: ticket.activities?.length },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key as typeof activeTab)}
+                  className={cn(
+                    'pb-3 text-sm font-medium border-b-2 transition-all flex items-center gap-1.5',
+                    activeTab === tab.key
+                      ? 'border-brand-500 text-brand-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  )}
+                >
+                  {tab.label}
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5">{tab.count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Conversation */}
+          {activeTab === 'conversation' && (
+            <div className="space-y-4">
+              <div className="flex gap-3">
+                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold text-gray-600">
+                  {ticket.requester_name.charAt(0)}
+                </div>
+                <div className="flex-1">
+                  <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold text-gray-800">{ticket.requester_name}</span>
+                      <span className="text-xs text-gray-400">{formatDateTime(ticket.created_at)}</span>
+                    </div>
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{ticket.description}</p>
+                    {ticket.equipment && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                        💻 Matériel : <strong>{ticket.equipment}</strong>
+                      </div>
+                    )}
+                    {ticket.attachments && ticket.attachments.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <div className="text-xs text-gray-500 mb-2">📎 Pièces jointes</div>
+                        <div className="flex flex-wrap gap-2">
+                          {ticket.attachments.map((url, i) => (
+                            <a key={i} href={url} target="_blank" rel="noopener" className="text-xs text-brand-600 hover:underline bg-brand-50 px-2 py-1 rounded">
+                              Fichier {i + 1}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {ticket.messages?.map(msg => {
+                const isAdmin = msg.author_role !== 'user'
+                return (
+                  <div key={msg.id} className={cn('flex gap-3', isAdmin && 'flex-row-reverse')}>
+                    <div className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold',
+                      isAdmin ? 'bg-brand-100 text-brand-700' : 'bg-gray-200 text-gray-600'
+                    )}>
+                      {msg.author_name.charAt(0)}
+                    </div>
+                    <div className={cn('flex-1 max-w-[80%]', isAdmin && 'items-end flex flex-col')}>
+                      <div className={cn(
+                        'rounded-xl p-4',
+                        isAdmin ? 'bg-brand-600 text-white' : 'bg-gray-50 border border-gray-100 text-gray-800'
+                      )}>
+                        <div className={cn('flex items-center justify-between mb-2 gap-4', isAdmin && 'flex-row-reverse')}>
+                          <span className={cn('text-xs font-semibold', isAdmin ? 'text-brand-200' : 'text-gray-700')}>
+                            {msg.author_name} {isAdmin && '· IT'}
+                          </span>
+                          <span className={cn('text-xs', isAdmin ? 'text-brand-300' : 'text-gray-400')}>
+                            {formatDateTime(msg.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={messagesEndRef} />
+
+              <div className="card p-4 mt-6">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Répondre au demandeur</div>
+                <textarea
+                  className="form-textarea mb-3"
+                  rows={4}
+                  placeholder="Écrivez votre réponse... Le demandeur la recevra par e-mail."
+                  value={reply}
+                  onChange={e => setReply(e.target.value)}
+                />
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-gray-400 flex items-center gap-1">
+                    <span>📧</span>
+                    <span>Le demandeur sera notifié par e-mail</span>
+                  </div>
+                  <button className="btn-primary" onClick={sendMessage} disabled={!reply.trim() || sendingMessage}>
+                    {sendingMessage ? 'Envoi...' : 'Envoyer'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {activeTab === 'notes' && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+                <span className="text-base">🔒</span>
+                <span>Les notes internes sont visibles uniquement par l'équipe IT.</span>
+              </div>
+              {ticket.notes?.length === 0 && (
+                <div className="empty-state py-10">
+                  <div className="text-3xl mb-3">📝</div>
+                  <div className="text-gray-500">Aucune note interne</div>
+                </div>
+              )}
+              {ticket.notes?.map(n => (
+                <div key={n.id} className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-amber-800">{(n.author as { full_name?: string })?.full_name || 'Admin'}</span>
+                    <span className="text-xs text-amber-600">{formatDateTime(n.created_at)}</span>
+                  </div>
+                  <p className="text-sm text-amber-900 whitespace-pre-wrap">{n.content}</p>
+                </div>
+              ))}
+              <div className="card p-4">
+                <textarea className="form-textarea mb-3" rows={3} placeholder="Ajouter une note interne..." value={note} onChange={e => setNote(e.target.value)} />
+                <button className="btn-secondary" onClick={addNote} disabled={!note.trim()}>Ajouter la note</button>
+              </div>
+            </div>
+          )}
+
+          {/* History */}
+          {activeTab === 'history' && (
+            <div className="space-y-3">
+              {ticket.activities?.length === 0 && (
+                <div className="empty-state py-10">
+                  <div className="text-3xl mb-3">📋</div>
+                  <div className="text-gray-500">Aucune activité enregistrée</div>
+                </div>
+              )}
+              {[...ticket.activities || []].reverse().map(a => (
+                <div key={a.id} className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm text-gray-700">
+                      <strong>{a.performed_by}</strong> — {a.action}
+                      {a.old_value && a.new_value && (
+                        <span className="text-gray-500"> (<span className="line-through">{a.old_value}</span> → <strong>{a.new_value}</strong>)</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">{formatDateTime(a.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Right sidebar */}
+      <div className="w-full lg:w-72 xl:w-80 border-t lg:border-t-0 lg:border-l border-gray-100 overflow-y-auto bg-white flex-shrink-0">
+        <div className="p-5 space-y-5">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Statut</label>
+            <select className="form-select" value={ticket.status} onChange={e => updateTicket({ status: e.target.value as TicketStatus })} disabled={saving}>
+              {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Priorité</label>
+            <select className="form-select" value={ticket.priority} onChange={e => updateTicket({ priority: e.target.value as TicketPriority })} disabled={saving}>
+              {Object.entries(PRIORITY_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Assigné à</label>
+            <select className="form-select" value={ticket.assigned_to || ''} onChange={e => updateTicket({ assigned_to: e.target.value || undefined })} disabled={saving}>
+              <option value="">Non assigné</option>
+              {technicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+            </select>
+          </div>
+
+          <div className="divider" />
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Informations</div>
+            <div className="space-y-2.5 text-sm">
+              {[
+                { label: 'Demandeur', value: ticket.requester_name },
+                { label: 'E-mail', value: ticket.requester_email },
+                { label: 'Service', value: ticket.requester_service },
+                { label: 'Site', value: ticket.requester_site },
+                { label: 'Catégorie', value: `${category?.emoji} ${category?.label}` },
+                { label: 'Créé le', value: formatDateTime(ticket.created_at) },
+                ticket.equipment ? { label: 'Matériel', value: ticket.equipment } : null,
+                ticket.affected_person ? { label: 'Personne concernée', value: ticket.affected_person } : null,
+              ].filter(Boolean).map((item) => (
+                item && (
+                  <div key={item.label} className="flex items-start gap-2">
+                    <span className="text-gray-400 flex-shrink-0 w-24 text-xs pt-0.5">{item.label}</span>
+                    <span className="text-gray-700 text-xs break-all">{item.value}</span>
+                  </div>
+                )
+              ))}
+            </div>
+          </div>
+
+          <div className="divider" />
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Actions</div>
+            <div className="space-y-2">
+              {ticket.status !== 'resolu' && (
+                <button className="btn-secondary w-full justify-center text-green-700 border-green-200 hover:bg-green-50" onClick={() => updateTicket({ status: 'resolu' })} disabled={saving}>
+                  ✅ Marquer résolu
+                </button>
+              )}
+              {ticket.status !== 'ferme' && (
+                <button className="btn-secondary w-full justify-center" onClick={() => updateTicket({ status: 'ferme' })} disabled={saving}>
+                  🔒 Fermer le ticket
+                </button>
+              )}
+              {(ticket.status === 'resolu' || ticket.status === 'ferme') && (
+                <button className="btn-secondary w-full justify-center text-brand-600" onClick={() => updateTicket({ status: 'nouveau' })} disabled={saving}>
+                  🔄 Rouvrir
+                </button>
+              )}
+              <button className="btn-secondary w-full justify-center" onClick={() => window.print()}>
+                🖨️ Imprimer
+              </button>
+              <button
+                className="btn-secondary w-full justify-center text-red-600 border-red-200 hover:bg-red-50 mt-4"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                🗑️ Supprimer le ticket
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <p style="margin:0 0 16px;color:#6b7280;font-size:14px;">
-      Vous pouvez répondre directement à cet e-mail, votre réponse sera automatiquement ajoutée à votre ticket.
-    </p>`,
-    `Réponse à votre ticket ${ticket.ticket_number}`
   )
-
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to: ticket.requester_email,
-    subject: `[Ticket IT ${ticket.ticket_number}] Réponse de l'équipe IT`,
-    html,
-    replyTo: `helpdesk+${ticket.id}@${process.env.SMTP_USER?.split('@')[1] || 'entreprise.fr'}`,
-  })
-}
-
-// ── Email: changement de statut ───────────────────────────────────────────────
-export async function sendStatusChange(ticket: Ticket, oldStatus: string, newStatus: string) {
-  if (!ticket.email_consent) return
-
-  const statusLabel = STATUS_CONFIG[ticket.status as keyof typeof STATUS_CONFIG]?.label || newStatus
-  const isClosed = ticket.status === 'ferme' || ticket.status === 'resolu'
-
-  const html = baseTemplate(
-    `
-    <h2 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;">
-      Statut mis à jour ${isClosed ? '✅' : '🔄'}
-    </h2>
-    <p style="margin:0 0 24px;color:#6b7280;font-size:15px;">
-      Bonjour <strong>${ticket.requester_name}</strong>, le statut de votre ticket a été mis à jour.
-    </p>
-    ${ticketBadge(ticket)}
-    <div style="text-align:center;padding:24px;background:#f9fafb;border-radius:10px;margin-bottom:24px;">
-      <div style="font-size:13px;color:#9ca3af;margin-bottom:12px;">Nouveau statut</div>
-      <div style="font-size:20px;font-weight:700;color:#4f46e5;">${statusLabel}</div>
-    </div>
-    ${isClosed
-      ? `<p style="margin:0;color:#6b7280;font-size:14px;text-align:center;">Votre demande a été traitée. Si le problème persiste, n'hésitez pas à créer un nouveau ticket.</p>`
-      : `<p style="margin:0;color:#6b7280;font-size:14px;text-align:center;">Notre équipe continue de traiter votre demande. Vous serez notifié(e) à chaque étape.</p>`
-    }`,
-    `Ticket ${ticket.ticket_number} — ${statusLabel}`
-  )
-
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM,
-    to: ticket.requester_email,
-    subject: `[Ticket IT ${ticket.ticket_number}] Statut mis à jour : ${statusLabel}`,
-    html,
-    replyTo: `helpdesk+${ticket.id}@${process.env.SMTP_USER?.split('@')[1] || 'entreprise.fr'}`,
-  })
 }
