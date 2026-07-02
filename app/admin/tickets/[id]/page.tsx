@@ -32,6 +32,8 @@ export default function TicketDetailPage() {
   const [ticket, setTicket] = useState<FullTicket | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [activeTab, setActiveTab] = useState<'conversation' | 'notes' | 'history'>('conversation')
   const [reply, setReply] = useState('')
   const [note, setNote] = useState('')
@@ -81,14 +83,26 @@ export default function TicketDetailPage() {
         body: JSON.stringify({ ...updates, performed_by: adminUser?.full_name || 'Admin' }),
       })
       if (!res.ok) throw new Error()
-      const updated = await res.json()
-      setTicket(prev => prev ? { ...prev, ...updated } : null)
       await loadTicket()
       toast.success('Ticket mis à jour')
     } catch {
       toast.error('Erreur lors de la mise à jour')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const deleteTicket = async () => {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/tickets/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      toast.success('Ticket supprimé')
+      router.push('/admin/tickets')
+    } catch {
+      toast.error('Erreur lors de la suppression')
+      setDeleting(false)
+      setShowDeleteConfirm(false)
     }
   }
 
@@ -150,6 +164,34 @@ export default function TicketDetailPage() {
 
   return (
     <div className="h-full flex flex-col lg:flex-row overflow-hidden animate-fade-in">
+      {/* Confirm delete modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative bg-white rounded-2xl shadow-elevated w-full max-w-sm p-6 animate-slide-up">
+            <div className="text-center mb-5">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Supprimer ce ticket ?</h3>
+              <p className="text-sm text-gray-500">
+                Le ticket <strong>{ticket.ticket_number}</strong> et toutes ses données seront définitivement supprimés. Cette action est irréversible.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button className="btn-secondary flex-1" onClick={() => setShowDeleteConfirm(false)}>
+                Annuler
+              </button>
+              <button className="btn-danger flex-1" onClick={deleteTicket} disabled={deleting}>
+                {deleting ? 'Suppression...' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main panel */}
       <div className="flex-1 min-w-0 overflow-y-auto">
         <div className="p-6 lg:p-8">
@@ -211,7 +253,6 @@ export default function TicketDetailPage() {
           {/* Conversation */}
           {activeTab === 'conversation' && (
             <div className="space-y-4">
-              {/* Initial description */}
               <div className="flex gap-3">
                 <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold text-gray-600">
                   {ticket.requester_name.charAt(0)}
@@ -244,7 +285,6 @@ export default function TicketDetailPage() {
                 </div>
               </div>
 
-              {/* Messages */}
               {ticket.messages?.map(msg => {
                 const isAdmin = msg.author_role !== 'user'
                 return (
@@ -276,7 +316,6 @@ export default function TicketDetailPage() {
               })}
               <div ref={messagesEndRef} />
 
-              {/* Reply box */}
               <div className="card p-4 mt-6">
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Répondre au demandeur</div>
                 <textarea
@@ -291,43 +330,27 @@ export default function TicketDetailPage() {
                     <span>📧</span>
                     <span>Le demandeur sera notifié par e-mail</span>
                   </div>
-                  <button
-                    className="btn-primary"
-                    onClick={sendMessage}
-                    disabled={!reply.trim() || sendingMessage}
-                  >
-                    {sendingMessage ? (
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                      </svg>
-                    )}
-                    Envoyer
+                  <button className="btn-primary" onClick={sendMessage} disabled={!reply.trim() || sendingMessage}>
+                    {sendingMessage ? 'Envoi...' : 'Envoyer'}
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Notes internes */}
+          {/* Notes */}
           {activeTab === 'notes' && (
             <div className="space-y-4">
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
                 <span className="text-base">🔒</span>
-                <span>Les notes internes sont visibles uniquement par l'équipe IT. Elles ne sont pas envoyées au demandeur.</span>
+                <span>Les notes internes sont visibles uniquement par l'équipe IT.</span>
               </div>
-
               {ticket.notes?.length === 0 && (
                 <div className="empty-state py-10">
                   <div className="text-3xl mb-3">📝</div>
                   <div className="text-gray-500">Aucune note interne</div>
                 </div>
               )}
-
               {ticket.notes?.map(n => (
                 <div key={n.id} className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-2">
@@ -337,23 +360,14 @@ export default function TicketDetailPage() {
                   <p className="text-sm text-amber-900 whitespace-pre-wrap">{n.content}</p>
                 </div>
               ))}
-
               <div className="card p-4">
-                <textarea
-                  className="form-textarea mb-3"
-                  rows={3}
-                  placeholder="Ajouter une note interne..."
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                />
-                <button className="btn-secondary" onClick={addNote} disabled={!note.trim()}>
-                  Ajouter la note
-                </button>
+                <textarea className="form-textarea mb-3" rows={3} placeholder="Ajouter une note interne..." value={note} onChange={e => setNote(e.target.value)} />
+                <button className="btn-secondary" onClick={addNote} disabled={!note.trim()}>Ajouter la note</button>
               </div>
             </div>
           )}
 
-          {/* Historique */}
+          {/* History */}
           {activeTab === 'history' && (
             <div className="space-y-3">
               {ticket.activities?.length === 0 && (
@@ -371,9 +385,7 @@ export default function TicketDetailPage() {
                     <div className="text-sm text-gray-700">
                       <strong>{a.performed_by}</strong> — {a.action}
                       {a.old_value && a.new_value && (
-                        <span className="text-gray-500">
-                          {' '}(<span className="line-through">{a.old_value}</span> → <strong>{a.new_value}</strong>)
-                        </span>
+                        <span className="text-gray-500"> (<span className="line-through">{a.old_value}</span> → <strong>{a.new_value}</strong>)</span>
                       )}
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5">{formatDateTime(a.created_at)}</div>
@@ -385,58 +397,33 @@ export default function TicketDetailPage() {
         </div>
       </div>
 
-      {/* Right sidebar - ticket actions */}
+      {/* Right sidebar */}
       <div className="w-full lg:w-72 xl:w-80 border-t lg:border-t-0 lg:border-l border-gray-100 overflow-y-auto bg-white flex-shrink-0">
         <div className="p-5 space-y-5">
-          {/* Status */}
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Statut</label>
-            <select
-              className="form-select"
-              value={ticket.status}
-              onChange={e => updateTicket({ status: e.target.value as TicketStatus })}
-              disabled={saving}
-            >
-              {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
-              ))}
+            <select className="form-select" value={ticket.status} onChange={e => updateTicket({ status: e.target.value as TicketStatus })} disabled={saving}>
+              {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
           </div>
 
-          {/* Priority */}
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Priorité</label>
-            <select
-              className="form-select"
-              value={ticket.priority}
-              onChange={e => updateTicket({ priority: e.target.value as TicketPriority })}
-              disabled={saving}
-            >
-              {Object.entries(PRIORITY_CONFIG).map(([k, v]) => (
-                <option key={k} value={k}>{v.icon} {v.label}</option>
-              ))}
+            <select className="form-select" value={ticket.priority} onChange={e => updateTicket({ priority: e.target.value as TicketPriority })} disabled={saving}>
+              {Object.entries(PRIORITY_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
             </select>
           </div>
 
-          {/* Assigned to */}
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Assigné à</label>
-            <select
-              className="form-select"
-              value={ticket.assigned_to || ''}
-              onChange={e => updateTicket({ assigned_to: e.target.value || undefined })}
-              disabled={saving}
-            >
+            <select className="form-select" value={ticket.assigned_to || ''} onChange={e => updateTicket({ assigned_to: e.target.value || undefined })} disabled={saving}>
               <option value="">Non assigné</option>
-              {technicians.map(t => (
-                <option key={t.id} value={t.id}>{t.full_name}</option>
-              ))}
+              {technicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
             </select>
           </div>
 
           <div className="divider" />
 
-          {/* Ticket info */}
           <div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Informations</div>
             <div className="space-y-2.5 text-sm">
@@ -447,8 +434,8 @@ export default function TicketDetailPage() {
                 { label: 'Site', value: ticket.requester_site },
                 { label: 'Catégorie', value: `${category?.emoji} ${category?.label}` },
                 { label: 'Créé le', value: formatDateTime(ticket.created_at) },
-                ticket.equipment && { label: 'Matériel', value: ticket.equipment },
-                ticket.affected_person && { label: 'Personne concernée', value: ticket.affected_person },
+                ticket.equipment ? { label: 'Matériel', value: ticket.equipment } : null,
+                ticket.affected_person ? { label: 'Personne concernée', value: ticket.affected_person } : null,
               ].filter(Boolean).map((item) => (
                 item && (
                   <div key={item.label} className="flex items-start gap-2">
@@ -462,42 +449,32 @@ export default function TicketDetailPage() {
 
           <div className="divider" />
 
-          {/* Quick actions */}
           <div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Actions</div>
             <div className="space-y-2">
               {ticket.status !== 'resolu' && (
-                <button
-                  className="btn-secondary w-full justify-center text-green-700 border-green-200 hover:bg-green-50"
-                  onClick={() => updateTicket({ status: 'resolu' })}
-                  disabled={saving}
-                >
+                <button className="btn-secondary w-full justify-center text-green-700 border-green-200 hover:bg-green-50" onClick={() => updateTicket({ status: 'resolu' })} disabled={saving}>
                   ✅ Marquer résolu
                 </button>
               )}
               {ticket.status !== 'ferme' && (
-                <button
-                  className="btn-secondary w-full justify-center text-gray-600"
-                  onClick={() => updateTicket({ status: 'ferme' })}
-                  disabled={saving}
-                >
+                <button className="btn-secondary w-full justify-center" onClick={() => updateTicket({ status: 'ferme' })} disabled={saving}>
                   🔒 Fermer le ticket
                 </button>
               )}
               {(ticket.status === 'resolu' || ticket.status === 'ferme') && (
-                <button
-                  className="btn-secondary w-full justify-center text-brand-600"
-                  onClick={() => updateTicket({ status: 'nouveau' })}
-                  disabled={saving}
-                >
+                <button className="btn-secondary w-full justify-center text-brand-600" onClick={() => updateTicket({ status: 'nouveau' })} disabled={saving}>
                   🔄 Rouvrir
                 </button>
               )}
-              <button
-                className="btn-secondary w-full justify-center"
-                onClick={() => window.print()}
-              >
+              <button className="btn-secondary w-full justify-center" onClick={() => window.print()}>
                 🖨️ Imprimer
+              </button>
+              <button
+                className="btn-secondary w-full justify-center text-red-600 border-red-200 hover:bg-red-50 mt-4"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                🗑️ Supprimer le ticket
               </button>
             </div>
           </div>
