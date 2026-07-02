@@ -10,7 +10,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       .select(`
         *,
         assigned_user:admin_users(id, full_name, email, role),
-        messages:ticket_messages(*, ),
+        messages:ticket_messages(*),
         notes:ticket_notes(*, author:admin_users(id, full_name)),
         activities:ticket_activities(*)
       `)
