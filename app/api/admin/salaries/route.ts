@@ -26,7 +26,7 @@ export async function GET() {
         site: u.user_metadata?.site || '',
         created_at: u.created_at,
         last_sign_in_at: u.last_sign_in_at,
-        banned: u.banned ?? false,
+        banned: false,
       }))
 
     return NextResponse.json(salaries)
