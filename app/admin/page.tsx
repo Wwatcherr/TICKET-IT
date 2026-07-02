@@ -1,120 +1,307 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import toast from 'react-hot-toast'
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { STATUS_CONFIG, PRIORITY_CONFIG, CATEGORY_CONFIG, timeAgo, cn } from '@/lib/utils'
+import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from '@/types'
 
-export default function AdminLoginPage() {
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'Tous les statuts' },
+  ...Object.entries(STATUS_CONFIG).map(([k, v]) => ({ value: k, label: v.label })),
+]
+const PRIORITY_OPTIONS = [
+  { value: 'all', label: 'Toutes priorités' },
+  ...Object.entries(PRIORITY_CONFIG).map(([k, v]) => ({ value: k, label: v.label })),
+]
+const CATEGORY_OPTIONS = [
+  { value: 'all', label: 'Toutes catégories' },
+  ...Object.entries(CATEGORY_CONFIG).map(([k, v]) => ({ value: k, label: v.label })),
+]
+
+function TicketsContent() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [showPass, setShowPass] = useState(false)
+  const searchParams = useSearchParams()
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [page, setPage] = useState(1)
+
+  const [search, setSearch] = useState(searchParams.get('search') || '')
+  const [status, setStatus] = useState(searchParams.get('status') || 'all')
+  const [priority, setPriority] = useState(searchParams.get('priority') || 'all')
+  const [category, setCategory] = useState(searchParams.get('category') || 'all')
+  const [sortBy, setSortBy] = useState('created_at')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  const perPage = 20
+
+  const fetchTickets = useCallback(async () => {
     setLoading(true)
-
     try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) throw error
-      toast.success('Connexion réussie')
-      router.push('/admin/dashboard')
-      router.refresh()
-    } catch (err: unknown) {
-      toast.error(err instanceof Error && err.message.includes('Invalid') 
-        ? 'Identifiants incorrects' 
-        : 'Erreur de connexion')
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: String(perPage),
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      })
+      if (search) params.set('search', search)
+      if (status !== 'all') params.set('status', status)
+      if (priority !== 'all') params.set('priority', priority)
+      if (category !== 'all') params.set('category', category)
+
+      const res = await fetch(`/api/tickets?${params}`)
+      const data = await res.json()
+      setTickets(data.data || [])
+      setTotal(data.count || 0)
     } finally {
       setLoading(false)
     }
+  }, [page, search, status, priority, category, sortBy, sortOrder])
+
+  useEffect(() => {
+    const timeout = setTimeout(fetchTickets, search ? 300 : 0)
+    return () => clearTimeout(timeout)
+  }, [fetchTickets])
+
+  const handleExport = async (format: 'csv' | 'xlsx') => {
+    setExportLoading(true)
+    try {
+      const params = new URLSearchParams({ format })
+      if (status !== 'all') params.set('status', status)
+      if (priority !== 'all') params.set('priority', priority)
+      const res = await fetch(`/api/admin/export?${params}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `tickets-${new Date().toISOString().split('T')[0]}.${format}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExportLoading(false)
+    }
   }
 
+  const toggleSort = (field: string) => {
+    if (sortBy === field) setSortOrder(o => o === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(field); setSortOrder('desc') }
+    setPage(1)
+  }
+
+  const SortIcon = ({ field }: { field: string }) => (
+    <span className={cn('ml-1 text-xs', sortBy === field ? 'text-brand-600' : 'text-gray-300')}>
+      {sortBy === field ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+    </span>
+  )
+
+  const totalPages = Math.ceil(total / perPage)
+
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-brand-950 to-slate-900 flex items-center justify-center px-6">
-      <div className="w-full max-w-md animate-slide-up">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-brand-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-2xl">🛠️</span>
-          </div>
-          <h1 className="text-2xl font-bold text-white mb-1">IT Helpdesk</h1>
-          <p className="text-slate-400 text-sm">Espace administrateur</p>
+    <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="page-title">Tickets</h1>
+          <p className="text-sm text-gray-500 mt-1">{total} ticket{total > 1 ? 's' : ''} au total</p>
         </div>
-
-        {/* Form */}
-        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-8">
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">Adresse e-mail</label>
-              <input
-                type="email"
-                required
-                className="w-full px-4 py-3 text-sm border border-white/10 rounded-lg bg-white/5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                placeholder="admin@entreprise.fr"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">Mot de passe</label>
-              <div className="relative">
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  required
-                  className="w-full px-4 py-3 pr-11 text-sm border border-white/10 rounded-lg bg-white/5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  {showPass
-                    ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
-                    : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                  }
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-brand-500/25"
-            >
-              {loading ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Connexion...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                  </svg>
-                  Se connecter
-                </>
-              )}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button className="btn-secondary btn-sm flex items-center gap-1.5 pr-1.5">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Exporter
             </button>
-          </form>
-        </div>
-
-        <div className="mt-6 text-center">
-          <Link href="/" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
-            ← Retour au portail utilisateur
-          </Link>
+            {/* Simple dropdown via a group */}
+          </div>
+          <button onClick={() => handleExport('csv')} className="btn-secondary btn-sm" disabled={exportLoading}>CSV</button>
+          <button onClick={() => handleExport('xlsx')} className="btn-secondary btn-sm" disabled={exportLoading}>Excel</button>
         </div>
       </div>
-    </main>
+
+      {/* Filters */}
+      <div className="card p-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              className="form-input pl-9"
+              placeholder="Rechercher un ticket, demandeur, numéro..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+            />
+          </div>
+          <select className="form-select w-full sm:w-44" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}>
+            {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select className="form-select w-full sm:w-40" value={priority} onChange={e => { setPriority(e.target.value); setPage(1) }}>
+            {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select className="form-select w-full sm:w-40" value={category} onChange={e => { setCategory(e.target.value); setPage(1) }}>
+            {CATEGORY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {(search || status !== 'all' || priority !== 'all' || category !== 'all') && (
+            <button
+              className="btn-ghost btn-sm whitespace-nowrap"
+              onClick={() => { setSearch(''); setStatus('all'); setPriority('all'); setCategory('all'); setPage(1) }}
+            >
+              Effacer
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card overflow-hidden">
+        {loading ? (
+          <div className="p-12 text-center">
+            <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <div className="text-sm text-gray-400">Chargement...</div>
+          </div>
+        ) : tickets.length === 0 ? (
+          <div className="empty-state">
+            <div className="text-4xl mb-4">🔍</div>
+            <div className="text-gray-500 font-medium mb-1">Aucun ticket trouvé</div>
+            <div className="text-sm text-gray-400">Modifiez vos filtres ou créez un nouveau ticket</div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="cursor-pointer" onClick={() => toggleSort('ticket_number')}>
+                    N° Ticket <SortIcon field="ticket_number" />
+                  </th>
+                  <th>Titre</th>
+                  <th>Demandeur</th>
+                  <th className="cursor-pointer" onClick={() => toggleSort('priority')}>
+                    Priorité <SortIcon field="priority" />
+                  </th>
+                  <th className="cursor-pointer" onClick={() => toggleSort('status')}>
+                    Statut <SortIcon field="status" />
+                  </th>
+                  <th>Catégorie</th>
+                  <th className="cursor-pointer" onClick={() => toggleSort('created_at')}>
+                    Créé <SortIcon field="created_at" />
+                  </th>
+                  <th>Assigné à</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tickets.map(ticket => {
+                  const status = STATUS_CONFIG[ticket.status]
+                  const priority = PRIORITY_CONFIG[ticket.priority]
+                  const category = CATEGORY_CONFIG[ticket.category]
+                  return (
+                    <tr
+                      key={ticket.id}
+                      className="cursor-pointer hover:bg-brand-50/30 transition-colors"
+                      onClick={() => router.push(`/admin/tickets/${ticket.id}`)}
+                    >
+                      <td>
+                        <span className="font-mono text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded">
+                          {ticket.ticket_number}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="max-w-[220px] truncate font-medium text-gray-900">{ticket.title}</div>
+                        <div className="text-xs text-gray-400 truncate max-w-[220px]">{ticket.requester_site}</div>
+                      </td>
+                      <td>
+                        <div className="text-sm font-medium text-gray-700">{ticket.requester_name}</div>
+                        <div className="text-xs text-gray-400">{ticket.requester_service}</div>
+                      </td>
+                      <td>
+                        <span className={cn('badge', priority.color, priority.bg)}>
+                          {priority.icon} {priority.label}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={cn('badge', status.color, status.bg, 'border')}>
+                          <span className={cn('w-1.5 h-1.5 rounded-full', status.dot)} />
+                          {status.label}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm text-gray-600">{category?.emoji} {category?.label}</span>
+                      </td>
+                      <td>
+                        <span className="text-xs text-gray-500">{timeAgo(ticket.created_at)}</span>
+                      </td>
+                      <td>
+                        {ticket.assigned_user ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-6 h-6 bg-brand-100 rounded-full flex items-center justify-center">
+                              <span className="text-xs font-semibold text-brand-700">
+                                {(ticket.assigned_user as {full_name?: string})?.full_name?.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="text-xs text-gray-600">{(ticket.assigned_user as {full_name?: string})?.full_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">Non assigné</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-50">
+            <div className="text-xs text-gray-500">
+              {(page - 1) * perPage + 1}–{Math.min(page * perPage, total)} sur {total}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                className="btn-ghost btn-sm px-2"
+                disabled={page === 1}
+                onClick={() => setPage(p => p - 1)}
+              >
+                ←
+              </button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const p = i + Math.max(1, page - 2)
+                if (p > totalPages) return null
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={cn('btn-sm px-3 rounded-lg text-xs font-medium', p === page ? 'bg-brand-600 text-white' : 'btn-ghost')}
+                  >
+                    {p}
+                  </button>
+                )
+              })}
+              <button
+                className="btn-ghost btn-sm px-2"
+                disabled={page === totalPages}
+                onClick={() => setPage(p => p + 1)}
+              >
+                →
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function TicketsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">Chargement...</div>}>
+      <TicketsContent />
+    </Suspense>
   )
 }
