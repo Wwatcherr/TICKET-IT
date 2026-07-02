@@ -65,23 +65,16 @@ export default function HomePage() {
 
       {/* Hero */}
       <section className="flex-1 flex flex-col items-center justify-center px-6 py-16 text-center animate-fade-in">
-        <div className="inline-flex items-center gap-2 bg-brand-50 border border-brand-200 text-brand-700 text-xs font-semibold px-4 py-1.5 rounded-full mb-8">
-          <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse" />
-          Service disponible 24h/24
-        </div>
-
         <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6 leading-tight tracking-tight text-balance max-w-2xl">
-          Besoin d'aide
-          <span className="text-brand-600"> informatique ?</span>
+          Portail assistance <span className="text-brand-600">IT</span>
         </h1>
 
         <p className="text-lg text-gray-500 mb-10 max-w-xl leading-relaxed">
-          Signalez votre problème en quelques clics. Notre équipe IT reçoit votre demande
-          instantanément et vous répond rapidement.
+          Ouvrez un ticket ou consultez vos demandes en cours.
         </p>
 
         {/* Action cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl w-full mb-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl w-full">
           <Link href="/ticket/new" className="card p-6 text-left hover:shadow-soft hover:border-brand-200 transition-all group cursor-pointer">
             <div className="w-12 h-12 bg-brand-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-brand-200 transition-colors">
               <span className="text-2xl">➕</span>
@@ -97,21 +90,6 @@ export default function HomePage() {
             <div className="font-semibold text-gray-900 mb-1">Mes tickets</div>
             <div className="text-sm text-gray-500">Suivez vos demandes en cours</div>
           </Link>
-        </div>
-
-        {/* Info cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl w-full">
-          {[
-            { icon: '⚡', title: 'Rapide', desc: 'Moins de 2 minutes pour créer un ticket' },
-            { icon: '📨', title: 'Notifié', desc: 'E-mail à chaque mise à jour' },
-            { icon: '🔒', title: 'Sécurisé', desc: 'Données internes à l\'entreprise' },
-          ].map(f => (
-            <div key={f.title} className="card p-5 text-left">
-              <div className="text-xl mb-2">{f.icon}</div>
-              <div className="font-semibold text-gray-900 text-sm mb-0.5">{f.title}</div>
-              <div className="text-xs text-gray-500">{f.desc}</div>
-            </div>
-          ))}
         </div>
       </section>
 
