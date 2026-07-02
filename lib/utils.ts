@@ -91,25 +91,24 @@ export const CATEGORY_CONFIG: Record<TicketCategory, { label: string; emoji: str
 }
 
 export const SITES = [
-  'Siège social',
-  'Agence Lyon',
-  'Agence Paris',
-  'Agence Marseille',
-  'Entrepôt',
-  'Télétravail',
+  'Bureau Brecey',
+  'Bureau Isginy',
+  'Culture Brecey',
+  'Culture Isigny',
+  'Conditionnement Brecey',
+  'Conditionnement Isigny',
   'Autre',
 ]
 
 export const SERVICES = [
-  'Informatique',
+  'Admin',
   'Ressources Humaines',
   'Comptabilité / Finance',
-  'Commercial / Ventes',
-  'Marketing',
+  'Technicien logements',
+  'Techniciens serre',
   'Direction',
-  'Logistique',
-  'Production',
-  'Qualité',
+  'Serres',
+  'Culture',
   'Autre',
 ]
 
