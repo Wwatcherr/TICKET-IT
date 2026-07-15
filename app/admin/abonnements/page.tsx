@@ -71,8 +71,8 @@ export default function AbonnementsPage() {
     setCurrent(a)
     setForm({
       nom: a.nom, categorie: a.categorie, cout: String(a.cout),
-      periodicite: a.periodicite, date_renouvellement: a.date_renouvellement.split('T')[0],
-      statut: a.statut, notes: a.notes || '',
+      periodicite: a.periodicite as 'mensuel' | 'annuel', date_renouvellement: a.date_renouvellement.split('T')[0],
+      statut: a.statut as 'actif' | 'resilie' | 'en_pause', notes: a.notes || '',
     })
     setShowModal(true)
   }
