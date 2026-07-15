@@ -36,9 +36,19 @@ function AlerteBadge({ jours }: { jours: number }) {
   return <span className="text-xs text-gray-400">{jours}j</span>
 }
 
-const emptyForm = {
-  nom: '', categorie: 'Hébergement', cout: '', periodicite: 'annuel' as const,
-  date_renouvellement: '', statut: 'actif' as const, notes: '',
+interface FormState {
+  nom: string
+  categorie: string
+  cout: string
+  periodicite: 'mensuel' | 'annuel'
+  date_renouvellement: string
+  statut: 'actif' | 'resilie' | 'en_pause'
+  notes: string
+}
+
+const emptyForm: FormState = {
+  nom: '', categorie: 'Hébergement', cout: '', periodicite: 'annuel',
+  date_renouvellement: '', statut: 'actif', notes: '',
 }
 
 export default function AbonnementsPage() {
@@ -46,7 +56,7 @@ export default function AbonnementsPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [current, setCurrent] = useState<Abonnement | null>(null)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState<FormState>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState('tous')
 
