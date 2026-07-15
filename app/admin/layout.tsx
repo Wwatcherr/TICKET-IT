@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 const NAV_ITEMS = [
   { href: '/admin/dashboard', icon: '📊', label: 'Tableau de bord' },
   { href: '/admin/tickets', icon: '🎫', label: 'Tickets' },
+  { href: '/admin/abonnements', icon: '💳', label: 'Abonnements' },
   { href: '/admin/salaries', icon: '👤', label: 'Salariés' },
   { href: '/admin/users', icon: '👥', label: 'Équipe IT' },
   { href: '/admin/settings', icon: '⚙️', label: 'Paramètres' },
@@ -23,33 +24,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isLoginPage = pathname === '/admin'
 
   useEffect(() => {
-    if (isLoginPage) {
-      setReady(true)
-      return
-    }
-
+    if (isLoginPage) { setReady(true); return }
     const supabase = createClient()
-
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) {
-        router.replace('/admin')
-        return
-      }
-
+      if (!session) { router.replace('/admin'); return }
       try {
-        const { data } = await supabase
-          .from('admin_users')
-          .select('full_name')
-          .eq('id', session.user.id)
-          .single()
+        const { data } = await supabase.from('admin_users').select('full_name').eq('id', session.user.id).single()
         setUserName(data?.full_name || session.user.email || 'Admin')
       } catch {
         setUserName(session.user.email || 'Admin')
       }
-
       setReady(true)
     })
   }, [isLoginPage])
+
+  const handleSignOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.replace('/admin')
+  }
 
   if (!ready) {
     return (
@@ -62,15 +55,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     )
   }
 
-  if (isLoginPage) {
-    return <>{children}</>
-  }
-
-  const handleSignOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.replace('/admin')
-  }
+  if (isLoginPage) return <>{children}</>
 
   const Sidebar = () => (
     <aside className="flex flex-col h-full bg-white border-r border-gray-100">
@@ -90,12 +75,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {NAV_ITEMS.map((item) => {
           const isActive = pathname.startsWith(item.href)
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setSidebarOpen(false)}
-              className={`nav-item ${isActive ? 'active' : ''}`}
-            >
+            <Link key={item.href} href={item.href} onClick={() => setSidebarOpen(false)}
+              className={`nav-item ${isActive ? 'active' : ''}`}>
               <span className="text-base">{item.icon}</span>
               <span>{item.label}</span>
             </Link>
@@ -112,9 +93,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="p-3 border-t border-gray-100">
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50">
           <div className="w-8 h-8 bg-brand-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-semibold text-brand-700">
-              {userName.charAt(0).toUpperCase()}
-            </span>
+            <span className="text-sm font-semibold text-brand-700">{userName.charAt(0).toUpperCase()}</span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-gray-900 truncate">{userName}</div>
@@ -132,17 +111,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <div className="hidden lg:flex lg:w-60 xl:w-64 flex-shrink-0">
-        <div className="w-full h-full">
-          <Sidebar />
-        </div>
+        <div className="w-full h-full"><Sidebar /></div>
       </div>
 
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-64 z-50 shadow-elevated">
-            <Sidebar />
-          </div>
+          <div className="absolute left-0 top-0 bottom-0 w-64 z-50 shadow-elevated"><Sidebar /></div>
         </div>
       )}
 
@@ -156,10 +131,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="font-semibold text-gray-900 text-sm">IT Helpdesk</span>
           <div className="w-9" />
         </div>
-
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   )
