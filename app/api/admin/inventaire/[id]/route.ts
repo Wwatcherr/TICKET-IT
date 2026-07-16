@@ -20,15 +20,35 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try {
     const supabase = createAdminClient()
     const body = await req.json()
+
+    // Uniquement les champs autorisés
+    const allowed = [
+      'code_interne', 'site', 'service', 'collaborateur', 'responsable',
+      'type_materiel', 'modele', 'marque', 'numero_serie', 'numero_telephone',
+      'accessoires', 'date_ajout', 'date_remise', 'date_restitution',
+      'statut_inventaire', 'disponibilite', 'etat_remise', 'etat_restitution',
+      'commentaires',
+    ]
+
+    const updates: Record<string, unknown> = {}
+    allowed.forEach(key => {
+      if (key in body) {
+        // Convertir les chaînes vides en null pour les dates
+        updates[key] = body[key] === '' ? null : body[key]
+      }
+    })
+
     const { data, error } = await supabase
       .from('inventaire')
-      .update({ ...body, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', params.id)
       .select()
       .single()
+
     if (error) throw error
     return NextResponse.json(data)
-  } catch {
+  } catch (e) {
+    console.error('PATCH inventaire error:', e)
     return NextResponse.json({ error: 'Erreur mise à jour' }, { status: 500 })
   }
 }
