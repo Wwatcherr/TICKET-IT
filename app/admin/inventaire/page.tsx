@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { formatDate, cn } from '@/lib/utils'
-import { SITES, SERVICES } from '@/lib/utils'
+
+const DEFAULT_SITES = ['Brécey', 'Isigny', 'Télétravail', 'Autre']
+const DEFAULT_SERVICES = ['Informatique', 'Ressources Humaines', 'Comptabilité / Finance', 'Commercial / Ventes', 'Direction', 'Logistique', 'Autre']
 
 interface Materiel {
   id: string
@@ -70,6 +72,9 @@ export default function InventairePage() {
   const [filterStatut, setFilterStatut] = useState('all')
   const [filterSite, setFilterSite] = useState('all')
 
+  const [configSites, setConfigSites] = useState<string[]>(DEFAULT_SITES)
+  const [configServices, setConfigServices] = useState<string[]>(DEFAULT_SERVICES)
+
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   const handleExport = async () => {
@@ -103,6 +108,16 @@ export default function InventairePage() {
     const t = setTimeout(load, search ? 300 : 0)
     return () => clearTimeout(t)
   }, [search, filterType, filterStatut, filterSite])
+
+  useEffect(() => {
+    fetch('/api/admin/config')
+      .then(r => r.json())
+      .then(data => {
+        if (data.sites?.length) setConfigSites(data.sites)
+        if (data.services?.length) setConfigServices(data.services)
+      })
+      .catch(() => {})
+  }, [])
 
   const openCreate = () => {
     setCurrent(null)
@@ -236,7 +251,7 @@ export default function InventairePage() {
           </select>
           <select className="form-select w-full sm:w-36" value={filterSite} onChange={e => setFilterSite(e.target.value)}>
             <option value="all">Tous sites</option>
-            {SITES.map(s => <option key={s}>{s}</option>)}
+            {configSites.map(s => <option key={s}>{s}</option>)}
           </select>
           {(search || filterType !== 'all' || filterStatut !== 'all' || filterSite !== 'all') && (
             <button className="btn-ghost btn-sm" onClick={() => { setSearch(''); setFilterType('all'); setFilterStatut('all'); setFilterSite('all') }}>Effacer</button>
@@ -378,14 +393,14 @@ export default function InventairePage() {
                     <label className="form-label">Site</label>
                     <select className="form-select" value={form.site} onChange={e => set('site', e.target.value)}>
                       <option value="">—</option>
-                      {SITES.map(s => <option key={s}>{s}</option>)}
+                      {configSites.map(s => <option key={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="form-label">Service</label>
                     <select className="form-select" value={form.service} onChange={e => set('service', e.target.value)}>
                       <option value="">—</option>
-                      {SERVICES.map(s => <option key={s}>{s}</option>)}
+                      {configServices.map(s => <option key={s}>{s}</option>)}
                     </select>
                   </div>
                 </div>
