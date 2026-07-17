@@ -30,12 +30,35 @@ export async function GET(req: NextRequest) {
   }
 }
 
+function sanitize(body: Record<string, unknown>): Record<string, unknown> {
+  const dateFields = ['date_ajout', 'date_remise', 'date_restitution']
+  const result: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(body)) {
+    if (dateFields.includes(k)) {
+      result[k] = v === '' || v === null || v === undefined ? null : v
+    } else {
+      result[k] = v === '' ? null : v
+    }
+  }
+  return result
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = createAdminClient()
     const body = await req.json()
-    const { data, error } = await supabase.from('inventaire').insert(body).select().single()
-    if (error) throw error
+    const clean = sanitize(body)
+
+    const { data, error } = await supabase
+      .from('inventaire')
+      .insert(clean)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Supabase insert error:', error)
+      throw error
+    }
     return NextResponse.json(data)
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Erreur création'
