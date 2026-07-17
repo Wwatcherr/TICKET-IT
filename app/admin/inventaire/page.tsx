@@ -72,6 +72,21 @@ export default function InventairePage() {
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
+  const handleExport = async () => {
+    const params = new URLSearchParams()
+    if (filterType !== 'all') params.set('type', filterType)
+    if (filterStatut !== 'all') params.set('statut', filterStatut)
+    if (filterSite !== 'all') params.set('site', filterSite)
+    const res = await fetch(`/api/admin/inventaire/export?${params}`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `inventaire-it-${new Date().toISOString().split('T')[0]}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const load = async () => {
     setLoading(true)
     const params = new URLSearchParams()
@@ -166,12 +181,20 @@ export default function InventairePage() {
           <h1 className="page-title">Inventaire IT</h1>
           <p className="text-sm text-gray-500 mt-1">{items.length} matériel{items.length > 1 ? 's' : ''}</p>
         </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Ajouter
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn-secondary" onClick={handleExport}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Exporter Excel
+          </button>
+          <button className="btn-primary" onClick={openCreate}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Ajouter
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
