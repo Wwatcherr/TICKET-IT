@@ -33,66 +33,76 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen flex">
-      {/* Panneau gauche */}
-      <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-12 relative overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)' }}>
 
-        {/* Cercles décoratifs */}
-        <div className="absolute inset-0">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="absolute rounded-full border border-white/10"
-              style={{
-                width: `${(i+1)*160}px`,
-                height: `${(i+1)*160}px`,
-                top: '50%', left: '50%',
-                transform: 'translate(-50%, -50%)'
-              }} />
-          ))}
-        </div>
+      {/* ── Panneau gauche bleu ── */}
+      <div className="hidden lg:flex lg:w-1/2 items-center justify-center p-12 relative overflow-hidden" style={{
+        background: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)',
+      }}>
+        {/* Motif de points blanc */}
+        <div className="bg-dots-dark absolute inset-0 pointer-events-none" style={{ opacity: 1 }} />
 
-        {/* Points décoratifs */}
-        <div className="absolute inset-0 opacity-20"
-          style={{
-            backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
-            backgroundSize: '32px 32px'
+        {/* Cercles concentriques */}
+        {[180, 320, 460, 600].map((size, i) => (
+          <div key={i} className="absolute rounded-full border border-white pointer-events-none" style={{
+            width: size, height: size,
+            top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            opacity: 0.08,
           }} />
+        ))}
 
-        {/* Blobs de couleur */}
-        <div className="absolute top-20 right-10 w-40 h-40 rounded-full opacity-20"
-          style={{ background: 'radial-gradient(circle, #38bdf8, transparent)' }} />
-        <div className="absolute bottom-20 left-10 w-52 h-52 rounded-full opacity-15"
-          style={{ background: 'radial-gradient(circle, #7dd3fc, transparent)' }} />
+        {/* Blobs */}
+        <div className="absolute pointer-events-none" style={{
+          top: '-60px', right: '-60px',
+          width: '300px', height: '300px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(255,255,255,0.12), transparent 70%)',
+        }} />
+        <div className="absolute pointer-events-none" style={{
+          bottom: '-80px', left: '-80px',
+          width: '350px', height: '350px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(255,255,255,0.08), transparent 70%)',
+        }} />
 
         <div className="relative text-white text-center max-w-xs">
-          <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center text-3xl mx-auto mb-6 backdrop-blur-sm
-            border border-white/20">🛠️</div>
+          <div className="w-16 h-16 mx-auto mb-6 rounded-3xl flex items-center justify-center text-3xl" style={{
+            background: 'rgba(255,255,255,0.15)',
+            border: '1px solid rgba(255,255,255,0.25)',
+            backdropFilter: 'blur(8px)',
+          }}>🛠️</div>
           <h2 className="text-3xl font-bold mb-2 tracking-tight">IT Helpdesk</h2>
-          <p className="text-sky-200 text-base">{companyName}</p>
+          <p style={{ color: 'rgba(186,230,253,0.9)' }}>{companyName}</p>
         </div>
       </div>
 
-      {/* Panneau droit */}
-      <div className="flex-1 flex items-center justify-center p-8 relative overflow-hidden"
-        style={{ background: 'linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%)' }}>
+      {/* ── Panneau droit formulaire ── */}
+      <div className="flex-1 flex items-center justify-center p-8 relative overflow-hidden" style={{ background: '#ffffff' }}>
 
-        {/* Motif de points léger */}
-        <div className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: 'radial-gradient(circle, #0ea5e9 1.5px, transparent 1.5px)',
-            backgroundSize: '28px 28px'
-          }} />
+        {/* Motif de points très léger */}
+        <div className="bg-dots absolute inset-0 pointer-events-none" style={{ opacity: 0.04 }} />
 
-        {/* Blob coloré en arrière-plan */}
-        <div className="absolute top-0 right-0 w-72 h-72 rounded-full opacity-[0.07] -translate-y-1/2 translate-x-1/2"
-          style={{ background: 'radial-gradient(circle, #0ea5e9, transparent)' }} />
-        <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full opacity-[0.05] translate-y-1/2 -translate-x-1/2"
-          style={{ background: 'radial-gradient(circle, #0284c7, transparent)' }} />
+        {/* Blobs de couleur */}
+        <div className="absolute pointer-events-none" style={{
+          top: '-80px', right: '-80px',
+          width: '400px', height: '400px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(14,165,233,0.1), transparent 70%)',
+        }} />
+        <div className="absolute pointer-events-none" style={{
+          bottom: '-60px', left: '-60px',
+          width: '320px', height: '320px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(2,132,199,0.07), transparent 70%)',
+        }} />
 
         <div className="relative w-full max-w-sm animate-slide-up">
           {/* Logo mobile */}
           <div className="lg:hidden text-center mb-8">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3"
-              style={{ background: 'linear-gradient(135deg, #0ea5e9, #0284c7)' }}>🛠️</div>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3" style={{
+              background: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+              boxShadow: '0 4px 16px rgba(14,165,233,0.3)',
+            }}>🛠️</div>
             <h1 className="text-xl font-bold text-gray-900">IT Helpdesk</h1>
             <p className="text-sm text-gray-400">{companyName}</p>
           </div>
@@ -111,7 +121,7 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="form-label mb-0">Mot de passe</label>
-                <Link href="/reset-password" className="text-xs text-brand-500 hover:text-brand-600 font-semibold">Oublié ?</Link>
+                <Link href="/reset-password" className="text-xs font-semibold" style={{ color: '#0ea5e9' }}>Oublié ?</Link>
               </div>
               <div className="relative">
                 <input type={showPass ? 'text' : 'password'} required className="form-input pr-11"
@@ -128,7 +138,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <button type="submit" disabled={loading} className="btn-primary w-full justify-center" style={{ padding: '14px' }}>
+            <button type="submit" disabled={loading} className="btn-primary w-full justify-center" style={{ paddingTop: '14px', paddingBottom: '14px' }}>
               {loading
                 ? <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Connexion...</>
                 : 'Se connecter'
@@ -138,7 +148,7 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-gray-400 mt-6">
             Pas encore de compte ?{' '}
-            <Link href="/inscription" className="text-brand-500 font-semibold hover:text-brand-600">Créer un compte</Link>
+            <Link href="/inscription" className="font-semibold" style={{ color: '#0ea5e9' }}>Créer un compte</Link>
           </p>
         </div>
       </div>
